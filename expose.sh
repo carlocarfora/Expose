@@ -203,6 +203,12 @@ do
 	
 	node_depth=$(echo "$node" | awk -F"/" "{ print NF-$root_depth }")
 	
+	# ignore hidden directories
+	if [[ "$node" == "$topdir/."* ]]
+	then
+		continue
+	fi
+	
 	# ignore empty directories
 	if find "$node" -maxdepth 0 -empty | read v
 	then
@@ -392,7 +398,7 @@ do
 			done
 		fi
 		# If autorotate is enabled, and the EXIF orientation exists, and the orientation is between 5 and 8 (vertical codes)
-		orientation=$(identify -format "%[EXIF:Orientation]" "$image")
+		orientation=$(identify -quiet -format "%[EXIF:Orientation]" "$image")
 		if [ "$autorotate" = true ] && [ -n "$orientation" ] && [ $orientation -ge 5 ] && [ $orientation -le 8 ]
 		then
 			# If the image is rotated, swap the height and width
