@@ -299,7 +299,7 @@ function scrollcheck(){
 							var formats = String($(this).data("videoformats")).split(" ");
 							if(formats.length > 0){
 								var vidstring = '<div class="progress active"><div class="bar" style="background-color: '+$(this).parent().data('textcolor')+'"></div></div>';
-								vidstring += '<video class="image" poster="' + url+'/'+set_res+'.jpg" alt="" autoplay="autoplay" loop="loop" preload="auto" width="'+$(this).width()+'" height="'+$(this).outerHeight()+'">';
+								vidstring += '<video class="image" poster="' + url+'/'+set_res+'.jpg" alt="" autoplay="autoplay" loop="loop" muted="muted" preload="auto" width="'+$(this).width()+'" height="'+$(this).outerHeight()+'">';
 								
 								$.each(formats, function(i, v){
 									if(v){

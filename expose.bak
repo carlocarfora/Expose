@@ -138,17 +138,16 @@ gallery_video_filters=() # filter commands added to ffmpeg calls
 
 # scan working directory to populate $nav variables
 root_depth=$(echo "$topdir" | awk -F"/" "{ print NF }")
-_tmp="${topdir//[!\/]/}"
-topdir_slashcount="${#_tmp}"
 
 # if on cygwin, transforms given param to windows style path
-# check once at startup rather than on every call
-if command -v cygpath >/dev/null 2>&1
-then
-	winpath() { cygpath -m "$1"; }
-else
-	winpath() { printf '%s' "$1"; }
-fi
+winpath () {
+	if command -v cygpath >/dev/null 2>&1
+	then
+		cygpath -m "$1"
+	else
+		echo "$1"
+	fi
+}
 
 # $1: template, $2: {{ variable name }}, $3: replacement string
 template () {
@@ -191,20 +190,18 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-phase_start=$SECONDS
-printf "Scanning directories\n"
+printf "Scanning directories"
 
 while read node
 do
-	printf "  %s\n" "${node#"$topdir/"}"
+	printf "."
 	
 	if [ "$node" = "$topdir/_site" ]
 	then
 		continue
 	fi
 	
-	_tmp="${node//[!\/]/}"
-	node_depth=$(( ${#_tmp} - topdir_slashcount ))
+	node_depth=$(echo "$node" | awk -F"/" "{ print NF-$root_depth }")
 	
 	# ignore hidden directories
 	if [[ "$node" == "$topdir/."* ]]
@@ -218,18 +215,14 @@ do
 		continue
 	fi
 	
-	node_name=$(basename "$node" | sed -e 's/^[0-9]*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//')
+	node_name=$(basename "$node" | sed -e 's/^[0-9]*//' | sed -e 's/^[[:space:]]*//;s/[[:space:]]*$//')
 	if [ -z "$node_name" ]
 	then
 		node_name=$(basename "$node")
 	fi
 		
-	mapfile -t _subdirs < <(find "$node" -maxdepth 1 -type d ! -path "$node" ! -path "$node*/_*")
-	dircount="${#_subdirs[@]}"
-	dircount_sequence=0
-	for _d in "${_subdirs[@]}"; do
-		[[ "$_d" != *"$sequence_keyword"* ]] && ((dircount_sequence++))
-	done
+	dircount=$(find "$node" -maxdepth 1 -type d ! -path "$node" ! -path "$node*/_*" | wc -l)
+	dircount_sequence=$(find "$node" -maxdepth 1 -type d ! -path "$node" ! -path "$node*/_*" ! -path "$node/*$sequence_keyword*" | wc -l)
 	
 	if [ "$dircount" -gt 0 ]
 	then
@@ -240,7 +233,7 @@ do
 			node_type=1 # dir contains other dirs, but they are imagesequence dirs which are not galleries
 		fi
 	else
-		if [ ! -z "$sequence_keyword" ] && [[ "$node_name" == *"$sequence_keyword"* ]]
+		if [ ! -z "$sequence_keyword" ] && [ $(echo "$node_name" | grep "$sequence_keyword" | wc -l) -gt 0 ]
 		then
 			continue # dir is an imagesequence dir, it is in effect a video. Do not add to the path list
 		else
@@ -261,11 +254,11 @@ dir_stack=()
 url_rel=""
 nav_url+=(".") # first item in paths will always be $topdir
 
-printf "Populating nav (%ds)\n" $(( SECONDS - phase_start ))
-phase_start=$SECONDS
+printf "\nPopulating nav"
 
 for i in "${!paths[@]}"
 do
+	printf "."
 	
 	if [ "$i" = 0 ]
 	then
@@ -291,7 +284,7 @@ do
 		fi
 	fi
 	
-	url_rel=$(echo "${nav_name[$i]}" | sed 's/[^ a-zA-Z0-9]//g;s/ /-/g;y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/')
+	url_rel=$(echo "${nav_name[$i]}" | sed 's/[^ a-zA-Z0-9]//g;s/ /-/g' | tr '[:upper:]' '[:lower:]')
 	
 	url=""
 	for u in "${dir_stack[@]}"
@@ -305,11 +298,7 @@ do
 	nav_url+=("$url")
 done
 
-palette_cache_dir="$topdir/_site/.palette_cache"
-mkdir -p "$palette_cache_dir"
-
-printf "Reading files (%ds)\n" $(( SECONDS - phase_start ))
-phase_start=$SECONDS
+printf "\nReading files"
 
 # read in each file to populate $gallery variables
 for i in "${!paths[@]}"
@@ -332,9 +321,10 @@ do
 	while read file
 	do
 		
-		filename="${file##*/}"
-		printf "  [%d] %s\n" "$((index+1))" "$filename"
-		filedir="${file%/*}"
+		printf "."
+		
+		filename=$(basename "$file")
+		filedir=$(dirname "$file")
 		filepath=$(winpath "$file")
 		
 		trimmed=$(echo "${filename%.*}" | sed -e 's/^[[:space:]0-9]*//;s/[[:space:]]*$//')
@@ -344,15 +334,14 @@ do
 			trimmed=$(echo "${filename%.*}")
 		fi
 		
-		image_url=$(echo "$trimmed" | sed 's/[^ a-zA-Z0-9]//g;s/ /-/g;y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/')
+		image_url=$(echo "$trimmed" | sed 's/[^ a-zA-Z0-9]//g;s/ /-/g' | tr '[:upper:]' '[:lower:]')
 		
-		if [ -d "$file" ] && [[ "$filename" == *"$sequence_keyword"* ]]
+		if [ -d "$file" ] && [ $(echo "$filename" | grep "$sequence_keyword" | wc -l) -gt 0 ]
 		then
 			format="sequence"
 			image=$(find "$file" -maxdepth 1 ! -path "$file" -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" -o -iname "*.png" | sort | head -n 1)
 		else
-			extension="${filename##*.}"
-			extension="${extension,,}"
+			extension=$(echo "${filename##*.}" | tr '[:upper:]' '[:lower:]')
 		
 			# we'll trust that extensions aren't lying
 			if [ "$extension" = "jpg" ] || [ "$extension" = "jpeg" ] || [ "$extension" = "png" ] || [ "$extension" = "gif" ]
@@ -400,17 +389,7 @@ do
 				
 		if [ "$extract_colors" = true ]
 		then
-			_cache_key=$(printf '%s' "$file" | cksum | cut -d' ' -f1)
-			_cache_file="$palette_cache_dir/$_cache_key"
-			if [ -f "$_cache_file" ] && [ "$_cache_file" -nt "$file" ]
-			then
-				palette=$(cat "$_cache_file")
-				printf "    palette: cached\n"
-			else
-				printf "    palette: extracting...\n"
-				palette=$(convert "$image" -resize 200x200 -depth 4 +dither -colors 7 -unique-colors txt:- | tail -n +2 | awk 'BEGIN{RS=" "} /#/ {print}' 2>&1)
-				printf '%s\n' "$palette" > "$_cache_file"
-			fi
+			palette=$(convert "$image" -resize 200x200 -depth 4 +dither -colors 7 -unique-colors txt:- | tail -n +2 | awk 'BEGIN{RS=" "} /#/ {print}' 2>&1)
 		else
 			palette=""
 			for p in "${default_palette[@]}"
@@ -481,11 +460,7 @@ gallery_index=0
 firsthtml=""
 firstpath=""
 
-perl_available=false
-command -v perl >/dev/null 2>&1 && perl_available=true
-
-printf "Building HTML (%ds)\n" $(( SECONDS - phase_start ))
-phase_start=$SECONDS
+printf "\nBuilding HTML"
 
 for i in "${!paths[@]}"
 do
@@ -494,10 +469,8 @@ do
 		continue
 	fi
 	
-	printf "  %s (%d images)\n" "${nav_name[i]}" "${nav_count[i]}"
-
 	html="$template"
-
+	
 	gallery_metadata=""
 	if [ -e "${paths[i]}/$metadata_file" ]
 	then
@@ -508,6 +481,8 @@ do
 	while [ "$j" -lt "${nav_count[i]}" ]
 	do
 	
+		printf "." # show progress
+		
 		k=$((j+1))
 		file_path="${gallery_files[gallery_index]}"
 		file_type="${gallery_type[gallery_index]}"
@@ -566,7 +541,7 @@ do
 		fi
 		
 		# if perl available, pass content through markdown parser
-		if [ "$perl_available" = true ]
+		if command -v perl >/dev/null 2>&1
 		then
 			content=$(perl "$scriptdir/Markdown_1.0.1/Markdown.pl" --html4tags <(echo "$content"))
 		fi
@@ -749,8 +724,7 @@ firsthtml=$(echo "$firsthtml" | sed "s/{{[^{}]*:\([^}]*\)}}/\1/g")
 firsthtml=$(echo "$firsthtml" | sed "s/{{[^}]*}}//g; s/<ul><\/ul>//g")
 echo "$firsthtml" > "$topdir/_site"/index.html
 
-printf "Starting encode (%ds)\n" $(( SECONDS - phase_start ))
-phase_start=$SECONDS
+printf "\nStarting encode\n"
 
 # resize images, encode videos, compile image sequences
 for i in "${!gallery_files[@]}"
@@ -962,21 +936,18 @@ do
 	fi
 	
 	count=0
-	_convert_pids=()
-
+	
 	for res in "${resolution[@]}"
 	do
 		((count++))
 		[ -e "$topdir/_site/$url/$res.jpg" ] && continue
-
+		
 		# only downscale original image
 		if [ "$width" -ge "$res" ] || [ "$count" -eq "${#resolution[@]}" ]
 		then
-			convert $autorotateoption -size "$res"x"$res" "$image" -resize "$res"x"$res" -quality "$jpeg_quality" +profile '*' $options "$topdir/_site/$url/$res.jpg" &
-			_convert_pids+=($!)
+			convert $autorotateoption -size "$res"x"$res" "$image" -resize "$res"x"$res" -quality "$jpeg_quality" +profile '*' $options "$topdir/_site/$url/$res.jpg"
 		fi
 	done
-	for _pid in "${_convert_pids[@]}"; do wait "$_pid"; done
 	
 	# write zip file
 	if [ "$download_button" = true ] && [ ! -e "$topdir/_site/$url/${gallery_url[i]}.zip" ]
