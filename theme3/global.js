@@ -350,7 +350,6 @@ function scrollcheck(){
 
 							var formats = String($(this).data("videoformats")).split(" ");
 							if(formats.length > 0){
-								$(this).find('.bg').css('background-image', 'url('+url+'/'+set_res+'.jpg)');
 								var vidstring = '<div class="progress active"><div class="bar" style="background-color: '+$(this).parent().data('textcolor')+'"></div></div>';
 								vidstring += '<video class="image" poster="' + url+'/'+set_res+'.jpg" alt="" autoplay="autoplay" loop="loop" muted="muted" preload="auto" width="'+$(this).width()+'" height="'+$(this).outerHeight()+'">';
 								
@@ -381,7 +380,6 @@ function scrollcheck(){
 					}
 				}
 				img.prop('src',url+'/'+set_res+'.jpg').removeClass('blank');
-				$(this).find('.bg').css('background-image', 'url('+url+'/'+set_res+'.jpg)');
 			}
 			else{
 				// keeping all videos takes too much memory, reset as we go along
