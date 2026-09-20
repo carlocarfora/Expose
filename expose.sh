@@ -153,9 +153,14 @@ fi
 # $1: template, $2: {{ variable name }}, $3: replacement string
 template () {
 	key=$(echo "$2" | tr -d '[:space:]')
-		
+
 	value=$(echo $3 | sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' -e 's/&/\\\&/g') # escape sed input
 	echo "$1" | sed "s/{{$key}}/$value/g; s/{{$key:[^}]*}}/$value/g"
+}
+
+# $1: cache file, $2: source file - true if the cache file exists and is newer than the source
+cache_fresh () {
+	[ -f "$1" ] && [ "$1" -nt "$2" ]
 }
 
 scratchdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'exposetempdir')
@@ -308,6 +313,9 @@ done
 palette_cache_dir="$topdir/_site/.palette_cache"
 mkdir -p "$palette_cache_dir"
 
+meta_cache_dir="$topdir/_site/.meta_cache" # caches EXIF orientation + dimensions per file, keyed the same way as the palette cache
+mkdir -p "$meta_cache_dir"
+
 printf "Reading files (%ds)\n" $(( SECONDS - phase_start ))
 phase_start=$SECONDS
 
@@ -345,7 +353,11 @@ do
 		fi
 		
 		image_url=$(echo "$trimmed" | sed 's/[^ a-zA-Z0-9]//g;s/ /-/g;y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/')
-		
+
+		_cache_key=$(printf '%s' "$file" | cksum | cut -d' ' -f1)
+		_meta_cache_file="$meta_cache_dir/$_cache_key"
+		_palette_cache_file="$palette_cache_dir/$_cache_key"
+
 		if [ -d "$file" ] && [[ "$filename" == *"$sequence_keyword"* ]]
 		then
 			format="sequence"
@@ -387,29 +399,40 @@ do
 		
 		if [ "$format" = "video" ]
 		then
-			# generate image from video file first
-			temppath=$(winpath "$scratchdir/temp.jpg")
-			
-			ffmpeg -loglevel error -nostdin -y -i "$filepath" -vf "select=gte(n\,1)" -vframes 1 -qscale:v 2 "$temppath" < /dev/null
-			image="$scratchdir/temp.jpg"
-						
+			# only decode a frame if we'd actually need it below - both caches
+			# fresh means neither the palette nor the orientation/dimension lookup
+			# will touch $image, so skip the expensive part entirely
+			_need_frame=false
+			cache_fresh "$_meta_cache_file" "$file" || _need_frame=true
+			if [ "$extract_colors" = true ] && ! cache_fresh "$_palette_cache_file" "$file"
+			then
+				_need_frame=true
+			fi
+
+			if [ "$_need_frame" = true ]
+			then
+				# generate image from video file first
+				temppath=$(winpath "$scratchdir/temp.jpg")
+
+				ffmpeg -loglevel error -nostdin -y -i "$filepath" -vf "select=gte(n\,1)" -vframes 1 -qscale:v 2 "$temppath" < /dev/null
+				image="$scratchdir/temp.jpg"
+			fi
+
 		elif [ "$format" != "sequence" ]
 		then
 			image="$file"
 		fi
-				
+
 		if [ "$extract_colors" = true ]
 		then
-			_cache_key=$(printf '%s' "$file" | cksum | cut -d' ' -f1)
-			_cache_file="$palette_cache_dir/$_cache_key"
-			if [ -f "$_cache_file" ] && [ "$_cache_file" -nt "$file" ]
+			if cache_fresh "$_palette_cache_file" "$file"
 			then
-				palette=$(cat "$_cache_file")
+				palette=$(cat "$_palette_cache_file")
 				printf "    palette: cached\n"
 			else
 				printf "    palette: extracting...\n"
 				palette=$(convert "$image" -resize 200x200 -depth 4 +dither -colors 7 -unique-colors txt:- | tail -n +2 | awk 'BEGIN{RS=" "} /#/ {print}' 2>&1)
-				printf '%s\n' "$palette" > "$_cache_file"
+				printf '%s\n' "$palette" > "$_palette_cache_file"
 			fi
 		else
 			palette=""
@@ -418,16 +441,27 @@ do
 				palette+="$p"$'\n'
 			done
 		fi
-		# If autorotate is enabled, and the EXIF orientation exists, and the orientation is between 5 and 8 (vertical codes)
-		orientation=$(identify -quiet -format "%[EXIF:Orientation]" "$image")
-		if [ "$autorotate" = true ] && [ -n "$orientation" ] && [ $orientation -ge 5 ] && [ $orientation -le 8 ]
+
+		if cache_fresh "$_meta_cache_file" "$file"
 		then
-			# If the image is rotated, swap the height and width
-			width=$(identify -format "%h" "$image")
-			height=$(identify -format "%w" "$image")
+			mapfile -t _meta < "$_meta_cache_file"
+			orientation="${_meta[0]}"
+			width="${_meta[1]}"
+			height="${_meta[2]}"
+			printf "    metadata: cached\n"
 		else
-			width=$(identify -format "%w" "$image")
-			height=$(identify -format "%h" "$image")
+			# If autorotate is enabled, and the EXIF orientation exists, and the orientation is between 5 and 8 (vertical codes)
+			orientation=$(identify -quiet -format "%[EXIF:Orientation]" "$image")
+			if [ "$autorotate" = true ] && [ -n "$orientation" ] && [ $orientation -ge 5 ] && [ $orientation -le 8 ]
+			then
+				# If the image is rotated, swap the height and width
+				width=$(identify -format "%h" "$image")
+				height=$(identify -format "%w" "$image")
+			else
+				width=$(identify -format "%w" "$image")
+				height=$(identify -format "%h" "$image")
+			fi
+			printf '%s\n%s\n%s\n' "$orientation" "$width" "$height" > "$_meta_cache_file"
 		fi
 
 		maxwidth=0
