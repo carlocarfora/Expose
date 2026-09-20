@@ -683,6 +683,301 @@ min-width: 1px;
 .post_text {
   background-color: rgba(0, 0, 0, 0.8);
   color: rgb(255, 255, 255);
-  padding: 0.1em 0.1em;  
-  display: inline-block; 
+  padding: 0.1em 0.1em;
+  display: inline-block;
+}
+
+/* mobile-only elements, hidden on desktop by default */
+.bg, #mobilebar, #backdrop{
+	display: none;
+}
+
+/* lightbox (full-detail photo viewer) */
+#lightbox{
+	display: none;
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: #000;
+	z-index: 100;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#lightbox.active{
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+#lightbox img{
+	max-width: 100%;
+	max-height: 100%;
+	transform-origin: 0 0;
+	will-change: transform;
+}
+
+#lightbox-close{
+	position: absolute;
+	top: 15px;
+	right: 15px;
+	width: 34px;
+	height: 34px;
+	z-index: 101;
+	background: rgba(255,255,255,0.15) url(img/close.png) no-repeat center;
+	border-radius: 50%;
+}
+
+/* ==========================================================================
+   Mobile: genuine mobile-first layout, phones only. Desktop is untouched.
+   ========================================================================== */
+@media (max-width: 700px){
+
+	html{
+		scroll-snap-type: y mandatory;
+	}
+
+	/* progress marker strip would cut into the edge-to-edge photo look */
+	#marker{
+		display: none;
+	}
+
+	/* top bar replaces the sidebar */
+	#mobilebar{
+		display: flex;
+		align-items: center;
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 50px;
+		padding: 0 15px;
+		box-sizing: border-box;
+		background-color: rgba(0,0,0,0.55);
+		z-index: 40;
+	}
+
+	#navtoggle{
+		width: 22px;
+		height: 16px;
+		margin-right: 15px;
+		padding: 0;
+		border: 0;
+		background: none;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	#navtoggle span{
+		display: block;
+		width: 100%;
+		height: 2px;
+		background-color: #fff;
+	}
+
+	#mobiletitle{
+		font-size: 16px;
+		line-height: 1;
+	}
+
+	/* backdrop behind slide-out panels */
+	#backdrop{
+		display: block;
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background-color: rgba(0,0,0,0.6);
+		z-index: 45;
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 0.3s;
+	}
+
+	#backdrop.active{
+		opacity: 1;
+		visibility: visible;
+	}
+
+	/* sidebar becomes an off-canvas nav/controls panel */
+	#sidebar{
+		left: 0;
+		width: 80%;
+		max-width: 300px;
+		z-index: 50;
+		transform: translateX(-100%);
+		transition: transform 0.3s ease;
+	}
+
+	#sidebar.open{
+		transform: translateX(0);
+	}
+
+	/* stronger tint so nav text stays legible over whatever slide is behind it */
+	#sidebar .background{
+		-moz-opacity: 0.92;
+		-webkit-opacity: 0.92;
+		opacity: 0.92;
+	}
+
+	/* mobilebar already shows the site title */
+	#sidebar h1{
+		display: none;
+	}
+
+	#profile{
+		margin-top: 60px;
+	}
+
+	#nav li{
+		line-height: 34px;
+	}
+
+	#control li{
+		height: 40px;
+		line-height: 40px;
+	}
+
+	/* resolution/share become bottom sheets */
+	#share, #resolution{
+		left: 0;
+		bottom: 0;
+		top: auto;
+		width: 100%;
+		height: auto;
+		max-height: 60%;
+		overflow-y: auto;
+		z-index: 55;
+		transform: translateY(100%);
+		transition: transform 0.3s ease;
+		box-sizing: border-box;
+	}
+
+	#share.active, #resolution.active{
+		width: 100%;
+		transform: translateY(0);
+	}
+
+	#share ul, #resolution ul{
+		position: static;
+		width: auto;
+		padding: 15px 20px 25px 20px;
+	}
+
+	#share ul li, #resolution ul li{
+		float: none;
+		clear: both;
+		height: 40px;
+		line-height: 40px;
+		margin: 0;
+	}
+
+	/* content takes the full width */
+	#main{
+		padding: 0;
+		min-width: 0;
+	}
+
+	/* each photo becomes a full-screen snap card */
+	.slide{
+		height: 100vh;
+		padding-top: 0 !important;
+		scroll-snap-align: start;
+		scroll-snap-stop: always;
+	}
+
+	/* blurred cover fill, sized to whatever crop the photo needs */
+	.bg{
+		display: block;
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		background-size: cover;
+		background-position: center;
+		filter: blur(25px) brightness(0.55);
+		transform: scale(1.15);
+		z-index: 0;
+	}
+
+	/* the actual photo, centered, never cropped */
+	.image{
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: auto;
+		height: auto;
+		max-width: 100%;
+		max-height: 100%;
+		transform: translate(-50%, -50%);
+		z-index: 1;
+	}
+
+	video.image{
+		object-fit: contain;
+	}
+
+	/* text overlay pinned to the bottom, same treatment for every photo */
+	.post{
+		top: auto !important;
+		left: 0 !important;
+		bottom: 0 !important;
+		width: 100% !important;
+		height: auto !important;
+		max-height: 45%;
+		overflow-y: auto;
+		z-index: 2;
+		padding: 30px 20px 20px 20px;
+		box-sizing: border-box;
+		background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 65%, rgba(0,0,0,0) 100%);
+	}
+
+	/* the desktop polygon-wrap feature is switched off on mobile in JS;
+	   this just guards against any leftover markup */
+	.post .polygon{
+		display: none;
+	}
+
+	.post .content{
+		position: static;
+		width: auto;
+		height: auto;
+	}
+
+	.post h1, .post h2, .post h3{
+		font-size: 1.8em;
+		padding: 10px 0;
+	}
+
+	.post h1 .sub{
+		font-size: 14px;
+	}
+
+	#disqus_thread{
+		margin: 20px 15px 40px 15px;
+	}
+
+	.prev, .next{
+		width: 100%;
+		float: none;
+	}
+
+	.prev a, .next a{
+		padding: 20px 20px 20px 60px;
+		background-position: 15px 22px;
+		font-size: 28px;
+		min-height: 60px;
+	}
+
+	.next a{
+		padding: 20px 60px 20px 20px;
+		background-position: 95% 22px;
+	}
 }
