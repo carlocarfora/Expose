@@ -235,19 +235,15 @@ $(document).ready(function(){
 		return false;
 	});
 	
-	// text toggle
-	$('#textbutton').click(function(){
-		if($(this).hasClass('active')){
-			$('.post').addClass('hidden');
-			$(this).removeClass('active');
-			$(this).find('.text').text('show text');
-		}
-		else{
-			$('.post').removeClass('hidden');
-			$(this).addClass('active');
-			$(this).find('.text').text('hide text');
-		}
-		
+	// text toggle - #textbutton (sidebar) and #mobiletextbutton (top bar) both drive this
+	function setTextVisible(visible){
+		$('.post').toggleClass('hidden', !visible);
+		$('#textbutton, #mobiletextbutton').toggleClass('active', visible);
+		$('#textbutton .text').text(visible ? 'hide text' : 'show text');
+	}
+
+	$('#textbutton, #mobiletextbutton').click(function(){
+		setTextVisible(!$('#textbutton').hasClass('active'));
 		return false;
 	});
 	
@@ -313,22 +309,24 @@ $(document).ready(function(){
 
 function scrollcheck(){
 
+	updateFocusedSlide();
+
 	// current slide is the one with the largest overlap with screen
 	var new_slide = false;
 	var maxoverlap = 0;
 	$('.slide').each(function(){
-		var overlap = findoverlap(this);				
-	
+		var overlap = findoverlap(this);
+
 		if(overlap > maxoverlap){
 			maxoverlap = overlap;
 			new_slide = this;
 		}
 	});
-	
+
 	if(new_slide && new_slide != current_slide){
 		current_slide = new_slide;
 		var index = $('.slide').index(current_slide);
-		
+
 		$('.slide .image').removeClass('active');
 		$('.slide video').removeClass('active');
 		
@@ -482,6 +480,40 @@ function findoverlap(elem)
 		return overlap/(winHeight);
 	}
     return 0;
+}
+
+// which slide is most "in view" right now - used to fade captions in/out on mobile.
+// deliberately separate from the overlap-based current_slide above (used for marker/
+// color tinting): this measures visible pixels as a fraction of the SLIDE's own height,
+// not the viewport's, so a short landscape card that's fully visible correctly wins over
+// a tall portrait card that's only partially scrolled into view. Raw overlap or viewport-
+// center containment both end up biased toward whichever slide is taller.
+function updateFocusedSlide(){
+	var winHeight = $(window).height();
+	var docViewTop = $(window).scrollTop();
+	var docViewBottom = docViewTop + winHeight;
+
+	var focused = null;
+	var bestFraction = 0;
+
+	$('.slide').each(function(){
+		var top = $(this).offset().top;
+		var height = $(this).outerHeight();
+		var bottom = top + height;
+
+		var overlap = Math.min(bottom, docViewBottom) - Math.max(top, docViewTop);
+		var fraction = height > 0 ? (overlap/height) : 0;
+
+		if(fraction > bestFraction){
+			bestFraction = fraction;
+			focused = this;
+		}
+	});
+
+	if(focused && !$(focused).hasClass('focused')){
+		$('.slide.focused').removeClass('focused');
+		$(focused).addClass('focused');
+	}
 }
 
 // given content element and a polygon definition, fill the polygon with content text and hide original content
