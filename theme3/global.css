@@ -936,20 +936,42 @@ min-width: 1px;
 		order: 1;
 	}
 
-	/* caption sits below the photo now, in a plain black block (page background
-	   is already black) instead of overlaid on top of it */
+	/* caption body sits below the photo, in a plain black block (page background
+	   is already black) instead of overlaid on top of it. position:relative so
+	   .post h1 (below) can anchor itself to this block's top edge - see there */
 	.post{
-		position: static;
+		position: relative;
+		top: auto !important;
+		left: auto !important;
 		order: 2;
 		width: 100% !important;
+		height: auto !important;
 		padding: 22px 20px 4px 20px;
 		box-sizing: border-box;
 		background: #000;
 	}
 
-	.post.hidden{
-		opacity: 0;
-		pointer-events: none;
+	/* only the title stays on the photo. anchored to .post's own top edge (which
+	   is exactly the image/caption boundary) and shifted up by its own rendered
+	   height via translateY, so it hugs the bottom of the photo regardless of how
+	   long the title is - no need to know the photo's height */
+	.post h1{
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		transform: translateY(-100%);
+		margin: 0;
+		padding: 20px 20px 22px 20px;
+		box-sizing: border-box;
+		font-size: 1.8em;
+		text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 1px 12px rgba(0,0,0,0.5);
+		z-index: 2;
+	}
+
+	/* the black caption block stays put - only the text itself hides */
+	.post.hidden .content{
+		visibility: hidden;
 	}
 
 	/* the desktop polygon-wrap feature is switched off on mobile in JS;
@@ -973,7 +995,7 @@ min-width: 1px;
 		padding: 0;
 	}
 
-	.post h1, .post h2, .post h3{
+	.post h2, .post h3{
 		font-size: 1.8em;
 		padding: 10px 0;
 	}
