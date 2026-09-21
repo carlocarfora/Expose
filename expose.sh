@@ -316,6 +316,9 @@ mkdir -p "$palette_cache_dir"
 meta_cache_dir="$topdir/_site/.meta_cache" # caches EXIF orientation + dimensions per file, keyed the same way as the palette cache
 mkdir -p "$meta_cache_dir"
 
+content_cache_dir="$topdir/_site/.content_cache" # caches the Markdown.pl-rendered HTML for each post's caption
+mkdir -p "$content_cache_dir"
+
 printf "Reading files (%ds)\n" $(( SECONDS - phase_start ))
 phase_start=$SECONDS
 
@@ -599,10 +602,24 @@ do
 			textcolor=$(echo "${gallery_colors[gallery_index]}" | tail -1)
 		fi
 		
-		# if perl available, pass content through markdown parser
-		if [ "$perl_available" = true ]
+		# if perl available, pass content through markdown parser - cached per source
+		# text file, since spawning perl for every post is the dominant cost of a
+		# rebuild once images/videos are already encoded
+		if [ "$perl_available" = true ] && [ -n "$content" ]
 		then
-			content=$(perl "$scriptdir/Markdown_1.0.1/Markdown.pl" --html4tags <(echo "$content"))
+			_content_cache_key=$(printf '%s' "$file_path" | cksum | cut -d' ' -f1)
+			_content_cache_file="$content_cache_dir/$_content_cache_key"
+
+			if [ -n "$textfile" ] && cache_fresh "$_content_cache_file" "$textfile"
+			then
+				content=$(cat "$_content_cache_file")
+			else
+				content=$(perl "$scriptdir/Markdown_1.0.1/Markdown.pl" --html4tags <(echo "$content"))
+				if [ -n "$textfile" ]
+				then
+					printf '%s' "$content" > "$_content_cache_file"
+				fi
+			fi
 		fi
 		
 		# write to post template
