@@ -689,6 +689,18 @@ function lb_touchDistance(touches){
 	return Math.sqrt(dx*dx + dy*dy);
 }
 
+// updates lb_tx/lb_ty/lb_scale so the point under (midX, midY) stays visually fixed
+// as scale changes from lb_scale to newScale - i.e. zoom anchors to the pinch point
+// rather than the image's top-left corner (transform-origin: 0 0)
+function pinchZoomTo(midX, midY, newScale){
+	var rect = document.getElementById('lightbox-img').getBoundingClientRect();
+	var ratio = newScale / lb_scale;
+
+	lb_tx = lb_tx + (midX - rect.left) * (1 - ratio);
+	lb_ty = lb_ty + (midY - rect.top) * (1 - ratio);
+	lb_scale = newScale;
+}
+
 $(document).ready(function(){
 	var lbImg = document.getElementById('lightbox-img');
 	if(!lbImg){
@@ -716,7 +728,10 @@ $(document).ready(function(){
 	lbImg.addEventListener('touchmove', function(e){
 		if(lb_pinching && e.touches.length === 2){
 			var dist = lb_touchDistance(e.touches);
-			lb_scale = Math.min(Math.max(lb_startScale * (dist/lb_startDist), 1), 5);
+			var newScale = Math.min(Math.max(lb_startScale * (dist/lb_startDist), 1), 5);
+			var midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+			var midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+			pinchZoomTo(midX, midY, newScale);
 			applyLightboxTransform();
 			e.preventDefault();
 		}

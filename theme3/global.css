@@ -913,26 +913,38 @@ min-width: 1px;
 		overflow: visible;
 	}
 
-	/* each photo keeps its natural full-width height (the padding-top aspect-ratio
-	   box already set in JS) - just a light snap as you scroll past each one */
+	/* photo then caption, stacked - DOM order is post-before-image (for the desktop
+	   overlay), so reorder visually with flex rather than touching the template.
+	   padding-top:0 cancels the JS-set aspect-ratio placeholder, which was there to
+	   reserve space for an absolutely-positioned image; now the image sizes itself
+	   in normal flow (browsers already reserve its aspect ratio from the width/
+	   height attributes) */
 	.slide{
-		scroll-snap-align: start;
+		display: flex;
+		flex-direction: column;
+		scroll-snap-align: center;
+		margin-bottom: 28px;
+		padding-top: 0 !important;
 	}
 
-	/* text overlay pinned to the bottom of the photo itself, same treatment for every photo.
-	   legibility comes from the text-shadow alone - no background panel */
+	.image{
+		position: static;
+		order: 1;
+	}
+
+	video.image{
+		order: 1;
+	}
+
+	/* caption sits below the photo now, in a plain black block (page background
+	   is already black) instead of overlaid on top of it */
 	.post{
-		top: auto !important;
-		left: 0 !important;
-		bottom: 0 !important;
+		position: static;
+		order: 2;
 		width: 100% !important;
-		height: auto !important;
-		max-height: 45%;
-		overflow-y: auto;
-		z-index: 2;
-		padding: 20px 20px 22px 20px;
+		padding: 22px 20px 4px 20px;
 		box-sizing: border-box;
-		text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 1px 12px rgba(0,0,0,0.5);
+		background: #000;
 	}
 
 	.post.hidden{
@@ -953,8 +965,8 @@ min-width: 1px;
 	}
 
 	/* desktop uses these to box individual lines against arbitrary parts of a photo -
-	   on mobile the single gradient panel above already handles legibility, so these
-	   would otherwise double up as disconnected floating boxes on top of it */
+	   on mobile the caption already sits on a plain black block below the photo, so
+	   these would otherwise draw disconnected floating boxes for no reason */
 	.post .post_title, .post .post_text{
 		background: none;
 		display: inline;
