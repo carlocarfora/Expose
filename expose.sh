@@ -187,6 +187,40 @@ cache_fresh () {
 	[ -f "$1" ] && [ "$1" -nt "$2" ]
 }
 
+# progress bar: only draws with fancy \r updates on an actual terminal, so logs
+# piped to a file don't fill up with carriage-return control characters
+_progress_tty=false
+[ -t 1 ] && _progress_tty=true
+_progress_line_broken=true # true at start/after a break, so the first bar draw doesn't emit a stray blank line
+
+# $1: label, $2: current, $3: total
+progress_bar () {
+	if [ "$_progress_tty" = false ] || [ "$3" -le 0 ]
+	then
+		return
+	fi
+
+	local width=30
+	local filled=$(( $2 * width / $3 ))
+	[ "$filled" -gt "$width" ] && filled=$width
+	local empty=$(( width - filled ))
+	local bar
+	bar=$(printf '%*s' "$filled" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '-')
+
+	printf '\r%-16s [%s] %d/%d' "$1" "$bar" "$2" "$3"
+	_progress_line_broken=false
+}
+
+# ensures the next thing printed starts on its own fresh line, whether or not
+# a progress bar is currently mid-line (safe to call whether or not one is active)
+progress_break () {
+	if [ "$_progress_line_broken" = false ]
+	then
+		printf '\n'
+		_progress_line_broken=true
+	fi
+}
+
 scratchdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'exposetempdir')
 scratchdir=$(winpath "$scratchdir")
 
@@ -219,6 +253,10 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+
+script_start=$SECONDS
+stat_processed=0
+stat_cached=0
 
 phase_start=$SECONDS
 printf "Scanning directories\n"
@@ -346,6 +384,16 @@ mkdir -p "$content_cache_dir"
 printf "Reading files (%ds)\n" $(( SECONDS - phase_start ))
 phase_start=$SECONDS
 
+# quick pass just to get a total for the progress bar below - excludes caption
+# files (.txt/.md) so the count reflects photos/videos, not every file in the dir
+total_files=0
+for i in "${!paths[@]}"
+do
+	[ "${nav_type[i]}" -lt 1 ] && continue
+	total_files=$(( total_files + $(find "${paths[i]}" -maxdepth 1 ! -path "${paths[i]}" ! -path "${paths[i]}*/_*" ! -iname "*.txt" ! -iname "*.md" | wc -l) ))
+done
+read_count=0
+
 # read in each file to populate $gallery variables
 for i in "${!paths[@]}"
 do
@@ -354,21 +402,20 @@ do
 	then
 		continue
 	fi
-	
+
 	dir="${paths[i]}"
 	name="${nav_name[i]}"
 	url="${nav_url[i]}"
-	
+
 	mkdir -p "$topdir"/_site/"$url"
 
 	index=0
-	
+
 	# loop over found files
 	while read file
 	do
-		
+
 		filename="${file##*/}"
-		printf "  [%d] %s\n" "$((index+1))" "$filename"
 		filedir="${file%/*}"
 		filepath=$(winpath "$file")
 		
@@ -422,8 +469,10 @@ do
 				format="video"
 			fi
 		fi
-		
-		
+
+		((read_count++))
+		progress_bar "Reading files" "$read_count" "$total_files"
+
 		if [ "$format" = "video" ]
 		then
 			# only decode a frame if we'd actually need it below - both caches
@@ -455,9 +504,9 @@ do
 			if cache_fresh "$_palette_cache_file" "$file"
 			then
 				palette=$(cat "$_palette_cache_file")
-				printf "    palette: cached\n"
 			else
-				printf "    palette: extracting...\n"
+				progress_break
+				printf "  extracting palette: %s\n" "$filename"
 				palette=$(convert "$image" -resize 200x200 -depth 4 +dither -colors 7 -unique-colors txt:- | tail -n +2 | awk 'BEGIN{RS=" "} /#/ {print}' 2>&1)
 				printf '%s\n' "$palette" > "$_palette_cache_file"
 			fi
@@ -475,7 +524,6 @@ do
 			orientation="${_meta[0]}"
 			width="${_meta[1]}"
 			height="${_meta[2]}"
-			printf "    metadata: cached\n"
 		else
 			# If autorotate is enabled, and the EXIF orientation exists, and the orientation is between 5 and 8 (vertical codes)
 			orientation=$(identify -quiet -format "%[EXIF:Orientation]" "$image")
@@ -533,6 +581,8 @@ do
 	
 	nav_count[i]="$index"
 done
+
+progress_break
 
 # build html file for each gallery
 template=$(cat "$scriptdir/$theme_dir/template.html")
@@ -830,7 +880,7 @@ phase_start=$SECONDS
 # resize images, encode videos, compile image sequences
 for i in "${!gallery_files[@]}"
 do
-	echo -e "${gallery_url[i]}"
+	progress_bar "Starting encode" "$(( i + 1 ))" "${#gallery_files[@]}"
 
 	navindex="${gallery_nav[i]}"
 	url="${nav_url[navindex]}/${gallery_url[i]}"
@@ -846,6 +896,15 @@ do
 	do
 		[ -e "$topdir/_site/$url/$res.jpg" ] || { _need_resize=true; break; }
 	done
+
+	# rough but safe stat for the closing summary - computed here, before any
+	# `continue` in this loop can fire, so it always runs exactly once per item
+	if [ "$_need_resize" = true ]
+	then
+		((stat_processed++))
+	else
+		((stat_cached++))
+	fi
 
 	if [ "${gallery_type[i]}" = 0 ]
 	then		
@@ -887,6 +946,7 @@ do
 				continue
 			fi
 			
+			progress_break
 			echo "Compiling sequence images"
 			
 			# ffmpeg's image sequence feature is oddly limited and can't accept arbitrarily named files, copy to scratch dir as sequentially named files
@@ -948,6 +1008,8 @@ do
 				continue
 			fi
 
+			progress_break
+			echo -e "\tEncoding h264 ${resolution[0]} (draft)"
 			ffmpeg -loglevel error -nostdin -i "$filepath" -c:v libx264 -threads "$ffmpeg_threads" $options -vf scale="${resolution[0]}:trunc(ow/a/2)*2$filters" -profile:v high -pix_fmt yuv420p -preset ultrafast -crf 26 $audio -movflags +faststart -f mp4 "$output_url"
 		else
 			for vformat in "${video_formats[@]}"
@@ -978,6 +1040,7 @@ do
 						output_url=$(winpath "$topdir/_site/$url/$videofile")
 						nullpath=$(winpath "/dev/null")
 						
+						progress_break
 						echo -e "\tEncoding $vformat $res x $scaled_height"
 						
 						# h265 2 pass encode
@@ -1102,7 +1165,18 @@ do
 	rm -rf "${scratchdir:?}/"*
 done
 
+progress_break
+
 # copy resources to _site
 rsync -av --exclude="template.html" --exclude="post-template.html" "$scriptdir/$theme_dir/" "$topdir/_site/" >/dev/null
+
+site_size=$(du -sh "$topdir/_site" 2>/dev/null | cut -f1)
+
+printf "\nBuild complete in %ds\n" "$(( SECONDS - script_start ))"
+printf "  %d files (%d newly processed, %d already up to date)\n" "${#gallery_files[@]}" "$stat_processed" "$stat_cached"
+if [ -n "$site_size" ]
+then
+	printf "  _site is %s\n" "$site_size"
+fi
 
 cleanup
