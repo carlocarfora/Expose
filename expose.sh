@@ -152,10 +152,34 @@ fi
 
 # $1: template, $2: {{ variable name }}, $3: replacement string
 template () {
-	key=$(echo "$2" | tr -d '[:space:]')
+	local key="${2//[[:space:]]/}"
 
-	value=$(echo $3 | sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' -e 's/&/\\\&/g') # escape sed input
-	echo "$1" | sed "s/{{$key}}/$value/g; s/{{$key:[^}]*}}/$value/g"
+	# historical behavior (from the old unquoted `echo $3`) word-splits the value on
+	# whitespace and rejoins with single spaces - collapsing multi-line content onto one
+	# line. Harmless in HTML output (whitespace collapses visually regardless) but matched
+	# here for identical output, minus the dangerous glob-expansion `echo $3` also implied
+	# (deliberately suppressed via `set -f`)
+	local value="$3"
+	if [[ "$value" == *[$' \t\n']* ]]
+	then
+		local _words
+		set -f
+		_words=($value)
+		set +f
+		value="${_words[*]}"
+	fi
+
+	local result="${1//"{{$key}}"/$value}"
+
+	# {{key:default}} syntax - only worth a sed pass when the pattern might be present
+	if [[ "$result" == *"{{$key:"* ]]
+	then
+		local escaped_value
+		escaped_value=$(printf '%s' "$value" | sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' -e 's/&/\\\&/g')
+		result=$(printf '%s' "$result" | sed "s/{{$key:[^}]*}}/$escaped_value/g")
+	fi
+
+	printf '%s' "$result"
 }
 
 # $1: cache file, $2: source file - true if the cache file exists and is newer than the source
