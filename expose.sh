@@ -831,12 +831,22 @@ phase_start=$SECONDS
 for i in "${!gallery_files[@]}"
 do
 	echo -e "${gallery_url[i]}"
-	
+
 	navindex="${gallery_nav[i]}"
 	url="${nav_url[navindex]}/${gallery_url[i]}"
-	
+
 	mkdir -p "$topdir/_site/$url"
-	
+
+	# do any $res.jpg static/poster images still need generating? if every
+	# resolution already exists, skip identify (and, for video, the poster-frame
+	# ffmpeg extraction feeding it below) - both were running unconditionally even
+	# when there was nothing left to resize
+	_need_resize=false
+	for res in "${resolution[@]}"
+	do
+		[ -e "$topdir/_site/$url/$res.jpg" ] || { _need_resize=true; break; }
+	done
+
 	if [ "${gallery_type[i]}" = 0 ]
 	then		
 		image="${gallery_files[i]}"
@@ -927,9 +937,17 @@ do
 		then
 			# if in draft mode, use single pass CRF coding with ultrafast preset
 			output_url=$(winpath "$topdir/_site/$url/${resolution[0]}-h264.mp4")
-			
-			[ -s "$output_url" ] && continue
-			
+
+			if [ -s "$output_url" ]
+			then
+				# already built - clear output_url before skipping ahead, otherwise
+				# it stays pointed at this (complete, valid) file and the exit trap's
+				# "remove a partial file if we were interrupted" cleanup deletes it
+				# on this run's perfectly normal exit
+				output_url=""
+				continue
+			fi
+
 			ffmpeg -loglevel error -nostdin -i "$filepath" -c:v libx264 -threads "$ffmpeg_threads" $options -vf scale="${resolution[0]}:trunc(ow/a/2)*2$filters" -profile:v high -pix_fmt yuv420p -preset ultrafast -crf 26 $audio -movflags +faststart -f mp4 "$output_url"
 		else
 			for vformat in "${video_formats[@]}"
@@ -1017,42 +1035,48 @@ do
 		fi
 		
 		output_url=""
-		
-		ffmpeg -loglevel error -nostdin -y -i "$filepath" $options -vf "select=gte(n\,1)$filters" -vframes 1 -qscale:v 2 "$scratchdir/temp.jpg"
-		image="$scratchdir/temp.jpg"
-	fi
-	
-	# generate static images for each resolution
-	width=$(identify -format "%w" "$image")
-	
-	options=""
-	if [ ! -z "${gallery_image_options[i]}" ]
-	then
-		options="${gallery_image_options[i]}"
-	fi
-	
-	if [ "${gallery_type[i]}" = 1 ]
-	then
-		options="" # don't apply image options to a video
-	fi
-	
-	count=0
-	_convert_pids=()
 
-	for res in "${resolution[@]}"
-	do
-		((count++))
-		[ -e "$topdir/_site/$url/$res.jpg" ] && continue
-
-		# only downscale original image
-		if [ "$width" -ge "$res" ] || [ "$count" -eq "${#resolution[@]}" ]
+		if [ "$_need_resize" = true ]
 		then
-			convert $autorotateoption -size "$res"x"$res" "$image" -resize "$res"x"$res" -quality "$jpeg_quality" +profile '*' $options "$topdir/_site/$url/$res.jpg" &
-			_convert_pids+=($!)
+			ffmpeg -loglevel error -nostdin -y -i "$filepath" $options -vf "select=gte(n\,1)$filters" -vframes 1 -qscale:v 2 "$scratchdir/temp.jpg"
+			image="$scratchdir/temp.jpg"
 		fi
-	done
-	for _pid in "${_convert_pids[@]}"; do wait "$_pid"; done
-	
+	fi
+
+	# generate static images for each resolution
+	if [ "$_need_resize" = true ]
+	then
+		width=$(identify -format "%w" "$image")
+
+		options=""
+		if [ ! -z "${gallery_image_options[i]}" ]
+		then
+			options="${gallery_image_options[i]}"
+		fi
+
+		if [ "${gallery_type[i]}" = 1 ]
+		then
+			options="" # don't apply image options to a video
+		fi
+
+		count=0
+		_convert_pids=()
+
+		for res in "${resolution[@]}"
+		do
+			((count++))
+			[ -e "$topdir/_site/$url/$res.jpg" ] && continue
+
+			# only downscale original image
+			if [ "$width" -ge "$res" ] || [ "$count" -eq "${#resolution[@]}" ]
+			then
+				convert $autorotateoption -size "$res"x"$res" "$image" -resize "$res"x"$res" -quality "$jpeg_quality" +profile '*' $options "$topdir/_site/$url/$res.jpg" &
+				_convert_pids+=($!)
+			fi
+		done
+		for _pid in "${_convert_pids[@]}"; do wait "$_pid"; done
+	fi
+
 	# write zip file
 	if [ "$download_button" = true ] && [ ! -e "$topdir/_site/$url/${gallery_url[i]}.zip" ]
 	then
